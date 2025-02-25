@@ -2,7 +2,6 @@
 
 namespace DiePHP\LaravelResourcesTypescript\Parsers;
 
-use PhpParser\Node\Expr\New_;
 use PhpParser\Node\Expr\StaticCall;
 use PhpParser\Node\Scalar\String_;
 use PhpParser\NodeVisitorAbstract;
@@ -53,22 +52,44 @@ abstract class AbstractParser extends NodeVisitorAbstract
      * @param string $namespace The namespace to use for resolving class names in specific cases.
      * @return string The inferred type as a string, or 'mixed' if the type cannot be determined.
      */
-    protected function inferType($node, $namespace): string
+    protected function inferType($node, string $namespace = ''): string
     {
+
         if ($node instanceof \PhpParser\Node\Expr\Cast\Int_) {
             return 'int';
         } elseif ($node instanceof \PhpParser\Node\Expr\Cast\String_) {
             return 'string';
+        } elseif ($node instanceof \PhpParser\Node\Expr\Cast\Double) {
+            return 'float';
         } elseif ($node instanceof \PhpParser\Node\Expr\Cast\Bool_) {
             return 'bool';
         } elseif ($node instanceof \PhpParser\Node\Expr\Cast\Array_) {
             return 'array';
         } elseif ($node instanceof \PhpParser\Node\Expr\ConstFetch && $node->name->toLowerString() === 'null') {
             return 'null';
-        } elseif ($node instanceof New_) {
-            return $this->convertToPhpType($node->class->toString(), $namespace);
+        } elseif ($node instanceof \PhpParser\Node\Expr\New_) {
+            switch ($node->class->name) {
+                case 'Collection' :
+                    return "any[]";
+                case 'Carbon':
+                    return "string";
+                default:
+                    return $this->convertToPhpType($node->class->toString(), $namespace);
+            }
+
         } elseif ($node instanceof StaticCall) {
-            return $this->convertToPhpType($node->class->toString(), $namespace) . "[]";
+            switch ($class = $node->name->toString()) {
+                case 'collection':
+                    return $this->convertToPhpType($class, $namespace) . "[]";
+                case 'now':
+                    return "string";
+                default:
+                    return 'mixed';
+            }
+        } elseif ($node instanceof \PhpParser\Node\Expr\Cast\Object_) {
+            return 'object';
+        } else if ($node instanceof \PhpParser\Node\Expr\Array_) {
+            return 'array';
         }
 
         return 'mixed';

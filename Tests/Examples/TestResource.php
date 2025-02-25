@@ -4,6 +4,7 @@ namespace DiePHP\Tests\Examples;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Arr;
 
 class TestResource extends JsonResource
 {
@@ -11,6 +12,7 @@ class TestResource extends JsonResource
     {
         return [
             'id' =>      (int)$this->resource->id,
+            'uuid' => Arr::get($this->resource, 'uuid'),
             'type' =>     (string)$this->resource->type,
             'user' => new UserDto(),
             'contact' => new ContactModel(),
