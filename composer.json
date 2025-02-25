@@ -6,6 +6,13 @@
         "laravel/framework": "^v9",
         "jetbrains/phpstorm-attributes": "dev-master"
     },
+    "keywords": [
+        "generate",
+        "laravel",
+        "resources",
+        "typescript",
+        "interfaces"
+    ],
     "license": "MIT",
     "autoload": {
         "psr-4": {
