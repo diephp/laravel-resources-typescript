@@ -10,7 +10,7 @@ return [
 
     'resources_dir' => 'app/Http/Resources',
 
-    'output_typescript_file' => 'resources/ts/resources.ts',
+    'output_typescript_file' => 'resources/ts/Resources.ts',
 
     'php_to_ts_type_map' => [
         'int' => 'number',
