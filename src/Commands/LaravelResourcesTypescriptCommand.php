@@ -7,11 +7,31 @@ use DiePHP\LaravelResourcesTypescript\Services\MakeResourcesStructure;
 use DiePHP\LaravelResourcesTypescript\Services\TypeScriptInterfaceGenerator;
 use Illuminate\Console\Command;
 
+/**
+ * Class responsible for generating TypeScript interfaces based on Laravel resources.
+ */
 class LaravelResourcesTypescriptCommand extends Command
 {
+    /**
+     * The signature of the command used to generate TypeScript interfaces from PHP code.
+     */
     protected $signature = 'diephp:generate-typescript-interfaces';
+
+    /**
+     * The description of the command that generates TypeScript interfaces from Laravel resources.
+     */
     protected $description = 'Generate typescript interfaces from laravel resources';
 
+    /**
+     * Handles the generation of TypeScript interfaces from PHP resources.
+     *
+     * This method retrieves configuration settings, processes the resources
+     * to extract data structures, and generates TypeScript interfaces based
+     * on the extracted information. The resulting TypeScript code is stored
+     * in a specified output file.
+     *
+     * @return int Command execution status, indicating success or failure.
+     */
     public function handle()
     {
         $resourcesDir = config('resources2typescript.resources_dir');
