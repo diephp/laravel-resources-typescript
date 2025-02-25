@@ -78,9 +78,9 @@ abstract class AbstractParser extends NodeVisitorAbstract
             }
 
         } elseif ($node instanceof StaticCall) {
-            switch ($class = $node->name->toString()) {
+            switch ($node->name->toString()) {
                 case 'collection':
-                    return $this->convertToPhpType($class, $namespace) . "[]";
+                    return $this->convertToPhpType($node->class->toString(), $namespace) . "[]";
                 case 'now':
                     return "string";
                 default:
