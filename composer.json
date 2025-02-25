@@ -1,0 +1,27 @@
+{
+    "name": "diephp/laravel-resources-typescript",
+    "description": "Generate typescript interfaces from laravel resources",
+    "type": "library",
+    "require-dev": {
+        "laravel/framework": "^v9",
+        "jetbrains/phpstorm-attributes": "dev-master"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "DiePHP\\LaravelResourcesTypescript\\": "src/",
+            "DiePHP\\Tests\\Examples\\": "Tests/Examples/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Anatoly Astapov",
+            "email": "anatoly.astapov@gmail.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {
+        "php": "^8.0",
+        "nikic/php-parser": "^5.4"
+    }
+}
