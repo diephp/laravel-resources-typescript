@@ -115,7 +115,7 @@ class PhpDocParser extends AbstractParser
             }
         }
 
-        return trim($buffer) !== '' ? $buffer : null;
+        return null;
     }
 
     private function parsePropertyAnnotations(string $docComment): void

@@ -57,6 +57,11 @@ export interface EnumFieldResource {
 
 export type EnumValueResource = StatusEnum;
 
+export interface MalformedPhpDocResource {
+  series: { name: string; data: number[] } | any[];
+  categories: any[];
+}
+
 export interface ResourcePropertyHintsResource {
   name: any[];
   status: StatusEnum;

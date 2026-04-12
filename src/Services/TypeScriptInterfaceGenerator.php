@@ -28,8 +28,9 @@ class TypeScriptInterfaceGenerator
             $definition = $this->normalizeDefinition($name, $definition);
 
             if ($definition->getKind() === TypeDefinition::KIND_ALIAS) {
-                $type = $definition->getRawTypeScriptType()
-                    ?? $this->renderTypes($definition->getAliasTypes());
+                $type = $definition->getRawTypeScriptType() !== null
+                    ? $this->sanitizeRenderedType($definition->getRawTypeScriptType())
+                    : $this->renderTypes($definition->getAliasTypes());
 
                 $output[] = sprintf('export type %s = %s;', $definition->getName(), $type);
 
@@ -76,7 +77,9 @@ class TypeScriptInterfaceGenerator
     private function renderTypes(array $types): string
     {
         $renderedTypes = array_values(array_unique(array_map(
-            fn (string $type): string => $this->mapPhpTypeToTypeScript($type),
+            fn (string $type): string => $this->sanitizeRenderedType(
+                $this->mapPhpTypeToTypeScript($type),
+            ),
             $types,
         )));
 
@@ -130,5 +133,94 @@ class TypeScriptInterfaceGenerator
         $parts = explode('\\', $type);
 
         return (string) end($parts);
+    }
+
+    private function sanitizeRenderedType(string $type): string
+    {
+        $type = trim($type);
+
+        if ($type === '' || !$this->isValidTypeScriptType($type)) {
+            return 'any';
+        }
+
+        return $type;
+    }
+
+    private function isValidTypeScriptType(string $type): bool
+    {
+        if (preg_match('/(^|[^A-Za-z])(array|list|collection)\s*</', $type) === 1) {
+            return false;
+        }
+
+        if (preg_match('/(^|[^A-Za-z])object\s*{/', $type) === 1) {
+            return false;
+        }
+
+        if (preg_match('/[;,|<&({[]\s*$/', $type) === 1) {
+            return false;
+        }
+
+        return $this->hasBalancedDelimiters($type);
+    }
+
+    private function hasBalancedDelimiters(string $type): bool
+    {
+        $pairs = [
+            ')' => '(',
+            ']' => '[',
+            '}' => '{',
+            '>' => '<',
+        ];
+        $stack = [];
+        $inSingleQuote = false;
+        $escaped = false;
+
+        $length = strlen($type);
+
+        for ($index = 0; $index < $length; $index++) {
+            $character = $type[$index];
+
+            if ($inSingleQuote) {
+                if ($escaped) {
+                    $escaped = false;
+
+                    continue;
+                }
+
+                if ($character === '\\') {
+                    $escaped = true;
+
+                    continue;
+                }
+
+                if ($character === "'") {
+                    $inSingleQuote = false;
+                }
+
+                continue;
+            }
+
+            if ($character === "'") {
+                $inSingleQuote = true;
+
+                continue;
+            }
+
+            if (in_array($character, ['(', '[', '{', '<'], true)) {
+                $stack[] = $character;
+
+                continue;
+            }
+
+            if (isset($pairs[$character])) {
+                $last = array_pop($stack);
+
+                if ($last !== $pairs[$character]) {
+                    return false;
+                }
+            }
+        }
+
+        return !$inSingleQuote && $stack === [];
     }
 }
