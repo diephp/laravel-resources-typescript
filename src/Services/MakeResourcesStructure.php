@@ -1,95 +1,117 @@
 <?php
 
+declare(strict_types=1);
+
 namespace DiePHP\LaravelResourcesTypescript\Services;
 
-/**
- * Represents a utility for constructing a resource structure by scanning a directory,
- * parsing PHP files, and categorizing their contents based on extracted data.
- * This class supports multiple parsers and fallback options for robust data extraction.
- */
+use DiePHP\LaravelResourcesTypescript\Dtos\TypeDefinition;
+use Throwable;
+
 class MakeResourcesStructure
 {
-    private string $resourcesDir;
-    private array $parsers;
-    private array $fallbackParsers = [];
-
-    public function __construct(string $resourcesDir, array $parsers = [], array $fallbackParsers = [])
-    {
-        $this->resourcesDir = $resourcesDir;
-        $this->parsers = $parsers;
-        $this->fallbackParsers = $fallbackParsers;
+    /**
+     * @param list<class-string> $parsers
+     * @param list<class-string> $fallbackParsers
+     */
+    public function __construct(
+        private string $resourcesDir,
+        private array $parsers = [],
+        private array $fallbackParsers = [],
+        private ?EnumTypeResolver $enumTypeResolver = null,
+    ) {
+        $this->enumTypeResolver ??= new EnumTypeResolver();
     }
 
     /**
-     * Scans the specified resources directory for PHP files, parses their data,
-     * and returns an associative array where the keys are class names derived
-     * from file names and the values are the corresponding parsed data.
-     *
-     * @return array An associative array mapping class names to parsed data.
+     * @return array<string, TypeDefinition>
      */
     public function generate(): array
     {
-        $resourceFiles = glob("{$this->resourcesDir}/*.php");
-        $resourcesData = [];
+        $definitions = [];
 
-        foreach ($resourceFiles as $filePath) {
+        foreach ($this->findPhpFiles() as $filePath) {
             $className = pathinfo($filePath, PATHINFO_FILENAME);
+            $definition = $this->parseFile($filePath, $className);
 
-            if (!$data = $this->parseFile($filePath)) {
-                $data = $this->alternativeParseFile($filePath);
+            if ($definition->isEmpty()) {
+                $definition = $this->alternativeParseFile($filePath, $className);
             }
 
-            $resourcesData[$className] = $data;
+            $definitions[$className] = $definition;
         }
 
-        return $resourcesData;
+        ksort($definitions);
+
+        return $this->enumTypeResolver->resolve($definitions);
     }
 
     /**
-     * Parses the contents of a given file using multiple parsers and extracts data fields.
-     * Each parser is instantiated and executed to process the file's code, and their results
-     * are merged recursively into a unified array. Errors encountered during parsing are logged.
-     *
-     * @param string $filePath The path to the file to be parsed.
-     * @return array An array containing the extracted data fields from the file.
+     * @return list<string>
      */
-    private function parseFile(string $filePath): array
+    private function findPhpFiles(): array
     {
-        $code = file_get_contents($filePath);
-        $fields = [];
+        if (!is_dir($this->resourcesDir)) {
+            return [];
+        }
 
-        foreach ($this->parsers as $parser) {
-            try {
-                $parserInstance = new $parser();
-                $fields = array_merge_recursive($fields, $parserInstance->process($code));
-            } catch (\Exception $e) {
-                echo "⚠ Parsers error: {$e->getMessage()}\n";
+        $files = [];
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($this->resourcesDir, \FilesystemIterator::SKIP_DOTS),
+        );
+
+        /** @var \SplFileInfo $file */
+        foreach ($iterator as $file) {
+            if ($file->getExtension() === 'php') {
+                $files[] = $file->getPathname();
             }
         }
 
-        return $fields;
+        sort($files);
+
+        return $files;
     }
 
-    /**
-     * Parses a file using a set of fallback parsers to extract structured data.
-     *
-     * @param string $filePath The path to the file that needs to be parsed.
-     * @return array An array containing the parsed and merged data fields from the provided file.
-     */
-    private function alternativeParseFile(string $filePath): array
+    private function parseFile(string $filePath, string $className): TypeDefinition
     {
         $code = file_get_contents($filePath);
-        $fields = [];
 
-        foreach ($this->fallbackParsers as $parser) {
+        if ($code === false) {
+            return TypeDefinition::interface($className);
+        }
+
+        $definition = TypeDefinition::interface($className);
+
+        foreach ($this->parsers as $parserClass) {
             try {
-                $parserInstance = new $parser();
-                $fields = array_merge_recursive($fields, $parserInstance->process($code));
-            } catch (\Exception $e) {
-                echo "⚠ Fallback parser error: {$e->getMessage()}\n";
+                $parser = new $parserClass();
+                $definition = $definition->merge($parser->process($code, $className));
+            } catch (Throwable) {
+                continue;
             }
         }
 
-        return $fields;
+        return $definition;
+    }
+
+    private function alternativeParseFile(string $filePath, string $className): TypeDefinition
+    {
+        $code = file_get_contents($filePath);
+
+        if ($code === false) {
+            return TypeDefinition::interface($className);
+        }
+
+        $definition = TypeDefinition::interface($className);
+
+        foreach ($this->fallbackParsers as $parserClass) {
+            try {
+                $parser = new $parserClass();
+                $definition = $definition->merge($parser->process($code, $className));
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return $definition;
     }
 }

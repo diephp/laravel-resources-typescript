@@ -1,68 +1,134 @@
 <?php
 
+declare(strict_types=1);
+
 namespace DiePHP\LaravelResourcesTypescript\Services;
 
-/**
- * A class for generating TypeScript interface definitions from resource data
- * and optionally persisting them to a file. This class maps PHP data types
- * to their corresponding TypeScript types via an internal type map.
- */
+use DiePHP\LaravelResourcesTypescript\Dtos\FieldDefinition;
+use DiePHP\LaravelResourcesTypescript\Dtos\TypeDefinition;
+
 class TypeScriptInterfaceGenerator
 {
-    private array $phpToTsTypeMap;
-
-    public function __construct(array $phpToTsTypeMap = [])
-    {
-        $this->phpToTsTypeMap = $phpToTsTypeMap;
+    /**
+     * @param array<string, string> $phpToTsTypeMap
+     */
+    public function __construct(
+        private array $phpToTsTypeMap = [],
+    ) {
     }
 
     /**
-     * Generates TypeScript interface definitions from the provided resource data.
-     *
-     * @param array $resourcesData An associative array where keys represent the interface names
-     *                              and values are arrays defining the fields and their types.
-     * @return string A string containing TypeScript interface definitions.
+     * @param array<string, TypeDefinition|array<string, string|array<int, string>>> $resourcesData
      */
     public function generate(array $resourcesData): string
     {
-        $output = "";
-        foreach ($resourcesData as $name => $fields) {
-            $output .= "export interface $name {" . PHP_EOL;
-            foreach ($fields as $key => $type) {
+        $output = [];
 
-                if (is_array($type)) {
-                    $type = implode(' | ',
-                        array_unique(
-                            array_map(function ($item) {
-                                return $this->phpToTsTypeMap[$item] ?? $item;
-                            }, $type)
-                        )
-                    );
-                } else {
-                    $type = $this->phpToTsTypeMap[$type] ?? $type;
-                }
+        foreach ($resourcesData as $name => $definition) {
+            $definition = $this->normalizeDefinition($name, $definition);
 
-                $output .= "  {$key}: {$type};" . PHP_EOL;
+            if ($definition->getKind() === TypeDefinition::KIND_ALIAS) {
+                $type = $definition->getRawTypeScriptType()
+                    ?? $this->renderTypes($definition->getAliasTypes());
+
+                $output[] = sprintf('export type %s = %s;', $definition->getName(), $type);
+
+                continue;
             }
-            $output .= "}" . PHP_EOL . PHP_EOL;
+
+            $lines = [sprintf('export interface %s {', $definition->getName())];
+
+            foreach ($definition->getFields() as $fieldName => $fieldDefinition) {
+                $lines[] = sprintf(
+                    '  %s%s: %s;',
+                    $fieldName,
+                    $fieldDefinition->isOptional() ? '?' : '',
+                    $this->renderField($fieldDefinition),
+                );
+            }
+
+            $lines[] = '}';
+            $output[] = implode(PHP_EOL, $lines);
         }
 
-        return $output;
+        return implode(PHP_EOL . PHP_EOL, $output) . PHP_EOL;
+    }
+
+    public function store(string $content, string $path): false|int
+    {
+        $directory = dirname($path);
+
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+
+        return file_put_contents($path, $content);
+    }
+
+    private function renderField(FieldDefinition $definition): string
+    {
+        return $this->renderTypes($definition->getTypes());
     }
 
     /**
-     * Saves the provided content to the specified file path.
-     * Creates necessary directories if they do not exist.
-     *
-     * @param string $content The content to be written to the file.
-     * @param string $path The file path where the content should be saved.
-     * @return false|int Returns the number of bytes written to the file, or false on failure.
+     * @param list<string> $types
      */
-    public function store(string $content, string $path): false|int
+    private function renderTypes(array $types): string
     {
-        if (!file_exists(dirname($path)))
-            mkdir(dirname($path), 0777, true);
+        $renderedTypes = array_values(array_unique(array_map(
+            fn (string $type): string => $this->mapPhpTypeToTypeScript($type),
+            $types,
+        )));
 
-        return file_put_contents($path, $content);
+        $specificTypes = array_values(array_filter(
+            $renderedTypes,
+            static fn (string $type): bool => $type !== 'any',
+        ));
+
+        return implode(' | ', $specificTypes === [] ? ['any'] : $specificTypes);
+    }
+
+    private function mapPhpTypeToTypeScript(string $type): string
+    {
+        if (str_ends_with($type, '[]')) {
+            return $this->mapPhpTypeToTypeScript(substr($type, 0, -2)) . '[]';
+        }
+
+        $normalized = trim($type, '\\');
+
+        if (isset($this->phpToTsTypeMap[$normalized])) {
+            return $this->phpToTsTypeMap[$normalized];
+        }
+
+        return $this->shortName($normalized);
+    }
+
+    /**
+     * @param TypeDefinition|array<string, string|array<int, string>> $definition
+     */
+    private function normalizeDefinition(string $name, TypeDefinition|array $definition): TypeDefinition
+    {
+        if ($definition instanceof TypeDefinition) {
+            return $definition;
+        }
+
+        $normalized = TypeDefinition::interface($name);
+
+        foreach ($definition as $fieldName => $types) {
+            $normalized->addField($fieldName, $types);
+        }
+
+        return $normalized;
+    }
+
+    private function shortName(string $type): string
+    {
+        if (!str_contains($type, '\\')) {
+            return $type;
+        }
+
+        $parts = explode('\\', $type);
+
+        return (string) end($parts);
     }
 }

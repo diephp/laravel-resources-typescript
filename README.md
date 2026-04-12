@@ -1,167 +1,110 @@
-# Laravel Resources to TypeScript Interfaces
+# Laravel Resources to TypeScript
 
-A package to generate TypeScript interfaces from **STANDARD** Laravel Resource files, which are commonly used in API responses.
+Version `2.0` of the package.
 
-If you don’t want to sacrifice performance by installing large packages that do the same thing but require a specific file structure, DTOs, ValueObjects, and rewriting everything using new objects from scratch, or if you already have a project that uses standard Laravel Resources to format API responses, then this package is for you.
-I created it because Laravel Resources are more than sufficient for building REST API applications.
-I am testing this package in my own applications, and so far, it covers all the use cases I’ve encountered. If you have a scenario where it falls short, feel free to let me know.
+Generate TypeScript `interface` and `type` definitions from standard Laravel resources without rewriting your API layer into DTO-only abstractions.
 
+The package analyzes native Laravel resources and can extract structure from:
+
+- direct `return []` arrays
+- PHPDoc array shapes
+- `#[ArrayShape(...)]`
+- public typed properties on DTO-style classes
+- Eloquent `$fillable`
+- `toArray()` methods that build the response through a variable like `$data['field'] = ...; return $data;`
+- resources and fields that return PHP `enum`
+
+If a type cannot be determined safely, it falls back to `any`.
+
+## What's New in 2.0
+
+- Support for PHP `enum` inside resources.
+- Generation of TypeScript `type` aliases for PHP enums.
+- Support for resources that return enum as the root value, not only arrays.
+- Better AST analysis for `toArray()` methods that build payload through a variable like `$data = []; $data['x'] = ...; return $data;`.
+- Support for optional fields created in conditional branches.
+- Support for DTO-like classes with public typed properties.
+- Recursive scanning of PHP files inside the configured resources directory.
+- Cleaner TypeScript output generation with both `interface` and `type`.
+
+## Compatibility
+
+- PHP: `^8.1`
+- Laravel: tested with `^9.0` and compatible with newer versions that keep standard resource behavior
+- TypeScript output: supports both generated `interface` and `type`
+
+## Upgrading from 1.x
+
+Version `2.0` is mostly source-compatible in usage, but there are a few important changes.
+
+### Breaking changes
+
+- Minimum PHP version is now `8.1` instead of `8.0`.
+- Generated output is no longer limited to `interface`. Enum-based definitions can now be emitted as TypeScript `type`.
+- In some resources the generated types may become more precise than in `1.x`.
+  For example:
+  - enum fields now reference generated enum types
+  - conditionally assigned fields can become optional
+  - DTO public typed properties are now inferred instead of falling back to `any`
+
+### What remains compatible
+
+- Standard Laravel `JsonResource` with `return []`.
+- `#[ArrayShape(...)]`.
+- PHPDoc `@return array{...}`.
+- Nested resources and resource collections.
+- Fallback to `any` when the package cannot safely infer a type.
 
 ## Installation
-
-To install the package, use the following Composer command:
 
 ```bash
 composer require diephp/laravel-resources-typescript
 ```
 
-## Configuration
+For `2.0`, your project must run on PHP `8.1+`.
 
-### Laravel 11+
+Publish the config if you want to customize paths:
 
-If you are using **Laravel 11** or newer, you need to manually register the service provider. Add the following provider to your `bootstrap/providers.php` file:
-
-```php
-\DiePHP\LaravelResourcesTypescript\Providers\LaravelResourcesTypescriptProvider::class,
+```bash
+php artisan vendor:publish --tag=resources2typescript
 ```
-### Setup config 
-config/resources2typescript.php
-
-*change `output_typescript_file`* for your real path
-```code
-// Directory with laravel resources
-'resources_dir' => 'app/Http/Resources', 
-
-// Final typescript file with interfaces
-'output_typescript_file' => 'resources/ts/Resources.ts', 
-
-// Array of parces, you can remove or add yours parcels
-'parsers' => [
-    ArrayShapeParser::class, // parce ArrayShape signature
-    PhpDocParser::class, // parce phpdoc signature
-    ToArrayParser::class, // parce method toArray in resource
-    FillableParser::class, // parcel model with protect $fillable = []
-],
-
-```
-
-
-For older versions of Laravel, automatic package discovery will handle this for you.
 
 ## Usage
 
-Once the package is installed and configured, it will automatically generate TypeScript interfaces from your Laravel Resource files. These interfaces can then be utilized in your TypeScript-based frontend projects for better type safety and code consistency.
+Run the generator:
 
-#### Run command for generate typescript interfaces
-```shell
+```bash
 php artisan diephp:generate-typescript-interfaces
 ```
 
+Default config:
+
+```php
+'resources_dir' => 'app/Http/Resources',
+'output_typescript_file' => 'resources/ts/Resources.ts',
+```
+
+## Supported Type Sources
+
+The generator can infer structure from:
+
+- direct `return []`
+- `#[ArrayShape(...)]`
+- PHPDoc `@return array{...}`
+- assignments through a temporary variable inside `toArray()`
+- public typed properties on DTO classes
+- model PHPDoc properties
+- model `$fillable`
+- enum values returned by fields or by the resource itself
+
 ## Examples
 
-Assume you have a Laravel Resource like this:
+### 1. Plain resource with casts
 
-
-
-
-### 1 standard resource without declaration
 ```php
-namespace App\Http\Resources;
-
-use Illuminate\Http\Resources\Json\JsonResource;
-
 class ExampleResource extends JsonResource
 {
-    public function toArray($request)
-    {
-        return [
-            'id' => $this->id,
-            'name' => $this->name,
-        ];
-    }
-}
-```
-The package will generate a corresponding TypeScript interface:
-```typescript
-export interface ExampleResource {
-    id: any;
-    name: any;
-}
-```
-This generated file can now be used in your frontend structure.
-
-
-
-### 2  resource with ArrayShape
-```php
-namespace App\Http\Resources;
-
-use Illuminate\Http\Resources\Json\JsonResource;
-
-class ExampleResource extends JsonResource
-{
-    #[ArrayShape(['id' => "int", 'name' => "string"])] public function toArray($request)
-    {
-        return [
-            'id' => $this->id,
-            'name' => $this->name,
-        ];
-    }
-}
-```
-The package will generate a corresponding TypeScript interface:
-```typescript
-export interface ExampleResource {
-    id: number;
-    name: string;
-}
-```
-This generated file can now be used in your frontend structure.
-
-
-### 3  resource with PHPDOC
-```php
-namespace App\Http\Resources;
-
-use Illuminate\Http\Resources\Json\JsonResource;
-
-class ExampleResource extends JsonResource
-{
-    /**
-     * @return array{
-     *     id: int,
-     *     name: string,
-     * }
-     */
-    public function toArray($request)
-    {
-        return [
-            'id' => $this->id,
-            'name' => $this->name,
-        ];
-    }
-}
-```
-The package will generate a corresponding TypeScript interface:
-```typescript
-export interface ExampleResource {
-    id: number;
-    name: string;
-}
-```
-This generated file can now be used in your frontend structure.
-
-
-### 4  resource simple toArray with types
-```php
-namespace App\Http\Resources;
-
-use Illuminate\Http\Resources\Json\JsonResource;
-
-class ExampleResource extends JsonResource
-{
-
-    public function toArray($request)
+    public function toArray($request): array
     {
         return [
             'id' => (int) $this->id,
@@ -170,20 +113,214 @@ class ExampleResource extends JsonResource
     }
 }
 ```
-The package will generate a corresponding TypeScript interface:
-```typescript
+
+```ts
 export interface ExampleResource {
-    id: number;
-    name: string;
+  id: number;
+  name: string;
 }
 ```
-This generated file can now be used in your frontend structure.
 
+### 2. Resource with `ArrayShape`
 
-## Contributing
+```php
+use JetBrains\PhpStorm\ArrayShape;
 
-If you would like to contribute, feel free to submit a pull request or file an issue on the [GitHub repository](https://github.com/diephp/laravel-resources-typescript).
+class ExampleResource extends JsonResource
+{
+    #[ArrayShape(['id' => 'int', 'name' => 'string'])]
+    public function toArray($request): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+        ];
+    }
+}
+```
+
+```ts
+export interface ExampleResource {
+  id: number;
+  name: string;
+}
+```
+
+### 3. Resource with PHPDoc array shape
+
+```php
+class ExampleResource extends JsonResource
+{
+    /**
+     * @return array{
+     *     id: int,
+     *     name: string,
+     *     category: \App\Http\Resources\CategoryResource,
+     * }
+     */
+    public function toArray($request): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'category' => new CategoryResource($this->category),
+        ];
+    }
+}
+```
+
+```ts
+export interface ExampleResource {
+  id: number;
+  name: string;
+  category: CategoryResource;
+}
+```
+
+### 4. DTO or model-like class with typed public properties
+
+```php
+class UserDto
+{
+    public string $name;
+    public string $email;
+    public int $age;
+}
+```
+
+```ts
+export interface UserDto {
+  name: string;
+  email: string;
+  age: number;
+}
+```
+
+### 5. Model with PHPDoc properties or `$fillable`
+
+```php
+/**
+ * @property string $domain
+ * @property mixed $protocol
+ */
+class SiteModel extends Model
+{
+}
+```
+
+```php
+class ContactModel extends Model
+{
+    protected $fillable = ['name', 'email', 'phone'];
+}
+```
+
+```ts
+export interface SiteModel {
+  domain: string;
+  protocol: any;
+}
+
+export interface ContactModel {
+  name: any;
+  email: any;
+  phone: any;
+}
+```
+
+### 6. Resource built through a variable
+
+```php
+class TimeResource extends JsonResource
+{
+    public function toArray($request): array
+    {
+        $result = [];
+        $result['time'] = $this->resource->time;
+
+        if ($this->resource->time_zone) {
+            $result['time_zone'] = $this->resource->time_zone;
+        }
+
+        return $result;
+    }
+}
+```
+
+```ts
+export interface TimeResource {
+  time: any;
+  time_zone?: any;
+}
+```
+
+### 7. Enum field inside a resource
+
+```php
+enum StatusEnum: string
+{
+    case Draft = 'draft';
+    case Published = 'published';
+}
+
+class StatusResource extends JsonResource
+{
+    public function toArray($request): array
+    {
+        return [
+            'status' => StatusEnum::Published,
+        ];
+    }
+}
+```
+
+```ts
+export type StatusEnum = 'draft' | 'published';
+
+export interface StatusResource {
+  status: StatusEnum;
+}
+```
+
+### 8. Resource that returns enum as root value
+
+```php
+class EnumValueResource extends JsonResource
+{
+    public function toArray($request)
+    {
+        return StatusEnum::Published;
+    }
+}
+```
+
+```ts
+export type EnumValueResource = StatusEnum;
+```
+
+## Notes
+
+- Priority is roughly: `ArrayShape` -> PHPDoc -> AST analysis of `toArray()` -> runtime fallback.
+- Enum definitions are generated as TypeScript `type` aliases.
+- Nested resources are preserved as references to their generated TypeScript definitions.
+- The scanner walks resource directories recursively.
+- If the package cannot infer an exact type, it falls back to `any`.
+
+## Search Keywords
+
+If you are publishing or searching for the package, the main focus of `2.0` is:
+
+- Laravel Resource to TypeScript
+- Laravel JsonResource TypeScript generator
+- PHP enum to TypeScript
+- API resource typings for Laravel
+
+## Testing
+
+```bash
+composer test
+```
 
 ## License
 
-This package is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
+MIT

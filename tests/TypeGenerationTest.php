@@ -1,0 +1,95 @@
+<?php
+
+declare(strict_types=1);
+
+namespace DiePHP\Tests;
+
+use DiePHP\LaravelResourcesTypescript\Services\MakeResourcesStructure;
+use DiePHP\LaravelResourcesTypescript\Services\TypeScriptInterfaceGenerator;
+use PHPUnit\Framework\TestCase;
+
+class TypeGenerationTest extends TestCase
+{
+    public function test_it_generates_interfaces_aliases_and_enum_types(): void
+    {
+        $config = require dirname(__DIR__) . '/src/config/resources2typescript.php';
+
+        $structure = new MakeResourcesStructure(
+            dirname(__DIR__) . '/tests/Examples',
+            $config['parsers'],
+            $config['fallback_parsers'],
+        );
+
+        $generator = new TypeScriptInterfaceGenerator($config['php_to_ts_type_map']);
+
+        $generatedTypes = $generator->generate($structure->generate());
+
+        $expected = <<<'TS'
+export interface AddressResource {
+  street: StreetResource;
+  number: string;
+  zip: number;
+  zip2: any;
+}
+
+export interface CategoryResource {
+  id: number;
+  name: string;
+}
+
+export interface ContactModel {
+  name: any;
+  email: any;
+  phone: any;
+}
+
+export interface EnumFieldResource {
+  status: StatusEnum;
+  statusFromFactory: StatusEnum;
+  nullableStatus: null;
+  previousStatus?: StatusEnum;
+}
+
+export type EnumValueResource = StatusEnum;
+
+export interface SiteModel {
+  domain: string;
+  protocol: any;
+}
+
+export type StatusEnum = 'draft' | 'published' | 'archived';
+
+export interface StreetResource {
+  name: string;
+  number: number;
+}
+
+export interface TestResource {
+  id: number;
+  uuid: any;
+  type: string;
+  user: UserDto;
+  contact: ContactModel;
+  category: CategoryResource;
+  size: number;
+  list: any[];
+  address: AddressResource[];
+  site: SiteModel;
+  createdAt: TimeResource;
+}
+
+export interface TimeResource {
+  time: any;
+  time_zone?: any;
+}
+
+export interface UserDto {
+  name: string;
+  email: string;
+  age: number;
+}
+TS;
+
+        self::assertSame($expected . PHP_EOL, $generatedTypes);
+    }
+}

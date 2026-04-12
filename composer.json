@@ -1,34 +1,63 @@
 {
     "name": "diephp/laravel-resources-typescript",
-    "description": "Generate typescript interfaces from laravel resources",
+    "description": "Generate TypeScript interfaces and type aliases from Laravel JsonResource classes, including enum support",
     "type": "library",
-    "require-dev": {
-        "laravel/framework": "^v9",
-        "jetbrains/phpstorm-attributes": "dev-master"
-    },
     "keywords": [
         "generate",
         "laravel",
+        "laravel-package",
+        "laravel-resource",
+        "jsonresource",
         "resources",
+        "api",
+        "codegen",
         "typescript",
-        "interfaces"
+        "interfaces",
+        "types",
+        "typescript-generator",
+        "laravel-typescript",
+        "php-enum",
+        "enum"
     ],
     "license": "MIT",
-    "autoload": {
-        "psr-4": {
-            "DiePHP\\LaravelResourcesTypescript\\": "src/",
-            "DiePHP\\Tests\\Examples\\": "Tests/Examples/"
-        }
-    },
     "authors": [
         {
             "name": "Anatoly Astapov",
             "email": "anatoly.astapov@gmail.com"
         }
     ],
-    "minimum-stability": "dev",
     "require": {
-        "php": "^8.0",
+        "php": "^8.1",
         "nikic/php-parser": "^5.4"
-    }
+    },
+    "require-dev": {
+        "jetbrains/phpstorm-attributes": "dev-master",
+        "laravel/framework": "^9.0",
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "DiePHP\\LaravelResourcesTypescript\\": "src/",
+            "DiePHP\\Tests\\Examples\\": "tests/Examples/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "DiePHP\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": [
+            "@php vendor/bin/phpunit"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "DiePHP\\LaravelResourcesTypescript\\Providers\\LaravelResourcesTypescriptProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
 }

@@ -1,54 +1,56 @@
 <?php
 
+declare(strict_types=1);
+
 namespace DiePHP\LaravelResourcesTypescript\Parsers;
 
+use DiePHP\LaravelResourcesTypescript\Dtos\TypeDefinition;
 use PhpParser\Node;
-use PhpParser\Node\Stmt\Namespace_;
 
-/**
- * The ArrayShapeParser class is responsible for parsing and mapping attribute information
- * into fields, specifically focusing on nodes that use the "ArrayShape" attribute. It extends
- * the functionality of the AbstractParser class.
- */
 class ArrayShapeParser extends AbstractParser
 {
-    private array $fields = [];
+    private TypeDefinition $definition;
 
-    /**
-     * Processes a given node, particularly handling specific node types to parse and
-     * map attribute information into fields.
-     *
-     * @param Node $node The node being entered and processed. Can be of various types
-     *                   including Namespace_ or Node\AttributeGroup, among others.
-     * @return void This method does not return any value.
-     */
-    public function enterNode(Node $node): void
+    public function enterNode(Node $node): null|int|Node|array
     {
-        $namespace = '';
-        if ($node instanceof Namespace_) {
-            $namespace = $node->name->toString() . '\\';
+        parent::enterNode($node);
+
+        if (!$node instanceof Node\AttributeGroup) {
+            return null;
         }
 
-        if ($node instanceof Node\AttributeGroup) {
-            foreach ($node->attrs as $attribute) {
-                if ($attribute->name->toString() === 'ArrayShape') {
-                    foreach ($attribute->args as $arg) {
-                        if ($arg->value instanceof Node\Expr\Array_) {
-                            foreach ($arg->value->items as $item) {
-                                if ($item->key instanceof Node\Scalar\String_) {
-                                    $key = $item->key->value;
-                                    $this->fields[$key] = $this->convertToPhpType($this->parseTypeFromString($item->value), $namespace);
-                                }
-                            }
-                        }
+        foreach ($node->attrs as $attribute) {
+            if ($this->shortName($attribute->name->toString()) !== 'ArrayShape') {
+                continue;
+            }
+
+            foreach ($attribute->args as $arg) {
+                if (!$arg->value instanceof Node\Expr\Array_) {
+                    continue;
+                }
+
+                foreach ($arg->value->items as $item) {
+                    if (!$item?->key instanceof Node\Scalar\String_) {
+                        continue;
                     }
+
+                    $types = $this->parseTypeFromString($item->value);
+                    $this->definition->addField($item->key->value, $types);
+                    $this->definition->addReferences($this->extractClassReferences($types));
                 }
             }
         }
+
+        return null;
     }
 
-    protected function getFields(): array
+    protected function resetDefinitionState(): void
     {
-        return $this->fields;
+        $this->definition = TypeDefinition::interface('AnonymousType');
+    }
+
+    protected function getDefinition(string $name): TypeDefinition
+    {
+        return TypeDefinition::interface($name)->merge($this->definition);
     }
 }

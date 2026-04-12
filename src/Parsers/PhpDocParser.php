@@ -1,70 +1,87 @@
 <?php
 
+declare(strict_types=1);
+
 namespace DiePHP\LaravelResourcesTypescript\Parsers;
 
+use DiePHP\LaravelResourcesTypescript\Dtos\TypeDefinition;
 use PhpParser\Node;
-use PhpParser\Node\Stmt\Namespace_;
 
-/**
- * Class PhpDocParser
- *
- * A specialized parser for traversing and analyzing nodes to extract type
- * information from PHPDoc comments. This class identifies and processes
- * PHPDoc annotations such as @return and @property, and maps them to
- * corresponding field definitions.
- */
 class PhpDocParser extends AbstractParser
 {
-    private array $fields = [];
+    private TypeDefinition $definition;
 
-    /**
-     * Processes a given node during traversal and extracts type information
-     * from PHPDoc comments associated with classes and methods.
-     *
-     * @param Node $node The node being traversed and analyzed.
-     * @return void This method does not return a value.
-     */
-    public function enterNode(Node $node) : void
+    public function enterNode(Node $node): null|int|Node|array
     {
-        $namespace = '';
-        if ($node instanceof Namespace_) {
-            $namespace = $node->name->toString() . '\\';
+        parent::enterNode($node);
+
+        if (
+            $node instanceof Node\Stmt\ClassMethod
+            && $node->name->toString() === 'toArray'
+            && $node->getDocComment() !== null
+        ) {
+            $this->parseReturnArrayShape($node->getDocComment()->getText());
         }
 
-        if ($node instanceof Node\Stmt\ClassMethod && $node->name->toString() === 'toArray' && $node->getDocComment()) {
-            if ($docComment = $node->getDocComment()->getText()) {
-                if (preg_match('/@return\s+array{([^}]+)}/', $docComment, $matches)) {
-                    $typeDefinitions = explode(',', $matches[1]);
-                    foreach ($typeDefinitions as $definition) {
-                        if (preg_match('/\s*([\w]+):\s*([\w\\\\]+)/', $definition, $match)) {
-                            $this->fields[$match[1]] = $this->convertToPhpType($match[2] ?? 'mixed', $namespace);
-                        }
-                    }
-                }
-            }
+        if ($node instanceof Node\Stmt\Class_ && $node->getDocComment() !== null) {
+            $this->parsePropertyAnnotations($node->getDocComment()->getText());
         }
 
-        if ($node instanceof Node\Stmt\Class_) {
-            $docComment = $node->getDocComment();
-            if ($docComment) {
-                $matches = [];
-                if (preg_match_all('/@property\s+([\w\\\\]+)\s+\$([\w]+)/i', $docComment->getText(), $matches)) {
-                    foreach ($matches[2] as $index => $fieldName) {
-                        $this->fields[$fieldName] = $this->convertToPhpType($matches[1][$index] ?? 'mixed', $namespace);
-                    }
-                }
+        return null;
+    }
 
-                if (preg_match_all('/@property\s+\$(\w+)/i', $docComment->getText(), $matches)) {
-                    foreach ($matches[1] as $index => $fieldName) {
-                        $this->fields[$fieldName] = 'mixed';
-                    }
-                }
+    protected function resetDefinitionState(): void
+    {
+        $this->definition = TypeDefinition::interface('AnonymousType');
+    }
+
+    protected function getDefinition(string $name): TypeDefinition
+    {
+        return TypeDefinition::interface($name)->merge($this->definition);
+    }
+
+    private function parseReturnArrayShape(string $docComment): void
+    {
+        if (!preg_match('/@return\s+array\s*{(.+?)}/s', $docComment, $matches)) {
+            return;
+        }
+
+        $shape = preg_replace('/^\s*\*\s?/m', '', $matches[1]) ?? $matches[1];
+
+        foreach ($this->splitTopLevel($shape, ',') as $definition) {
+            $definition = trim($definition);
+
+            if ($definition === '' || !str_contains($definition, ':')) {
+                continue;
             }
+
+            [$field, $type] = array_map('trim', explode(':', $definition, 2));
+            $field = ltrim($field, "* \t\n\r\0\x0B");
+            $optional = str_ends_with($field, '?');
+            $fieldName = rtrim($field, '?');
+            $types = $this->resolveTypeString($type);
+
+            $this->definition->addField($fieldName, $types, $optional);
+            $this->definition->addReferences($this->extractClassReferences($types));
         }
     }
 
-    protected function getFields(): array
+    private function parsePropertyAnnotations(string $docComment): void
     {
-        return $this->fields;
+        if (preg_match_all(
+            '/@property(?:-read|-write)?\s+([^\s]+)\s+\$([\w]+)/i',
+            $docComment,
+            $matches,
+            PREG_SET_ORDER,
+        ) === 0) {
+            return;
+        }
+
+        foreach ($matches as $match) {
+            $types = $this->resolveTypeString($match[1] ?? 'mixed');
+
+            $this->definition->addField($match[2], $types);
+            $this->definition->addReferences($this->extractClassReferences($types));
+        }
     }
 }
