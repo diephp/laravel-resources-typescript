@@ -373,6 +373,12 @@ abstract class AbstractParser extends NodeVisitorAbstract
             return 'mixed';
         }
 
+        $shortName = $this->shortName($type);
+
+        if (in_array($shortName, ['UuidInterface', 'Uuid'], true)) {
+            return 'string';
+        }
+
         return $this->resolveName($type) ?? $type;
     }
 
@@ -478,8 +484,39 @@ abstract class AbstractParser extends NodeVisitorAbstract
             return ['string'];
         }
 
+        if ($this->shortName($resolvedClass) === 'Arr' && $method === 'get') {
+            return $this->inferTypesFromArrGetCall($node);
+        }
+
+        if (
+            in_array($this->shortName($resolvedClass), ['Str', 'Uuid'], true)
+            && in_array($method, ['uuid', 'orderedUuid', 'uuid4', 'uuid7'], true)
+        ) {
+            return ['string'];
+        }
+
         if ($method !== null && $this->isEnumClass($resolvedClass)) {
             return [trim($resolvedClass, '\\')];
+        }
+
+        return ['mixed'];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function inferTypesFromArrGetCall(Expr\StaticCall $node): array
+    {
+        $keyArgument = $node->args[1]->value ?? null;
+
+        if ($keyArgument instanceof String_ && $this->isUuidLikeName($keyArgument->value)) {
+            return ['string'];
+        }
+
+        $defaultArgument = $node->args[2]->value ?? null;
+
+        if ($defaultArgument instanceof Expr) {
+            return $this->inferTypes($defaultArgument);
         }
 
         return ['mixed'];
@@ -523,6 +560,13 @@ abstract class AbstractParser extends NodeVisitorAbstract
         } catch (Throwable) {
             return false;
         }
+    }
+
+    protected function isUuidLikeName(string $name): bool
+    {
+        $normalized = strtolower(preg_replace('/[^a-z0-9]+/', '', $name) ?? $name);
+
+        return $normalized === 'uuid' || str_ends_with($normalized, 'uuid');
     }
 
     private function resetState(): void

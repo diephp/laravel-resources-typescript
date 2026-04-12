@@ -112,6 +112,7 @@ class ToArrayParser extends AbstractParser
             }
 
             $types = $this->inferTypesWithVariables($assignment->expr, $variables);
+            $types = $this->normalizeFieldTypes($fieldName, $types);
 
             $variableDefinition->addField($fieldName, $types);
             $variableDefinition->addReferences($this->extractClassReferences($types));
@@ -195,6 +196,7 @@ class ToArrayParser extends AbstractParser
             }
 
             $types = $this->inferTypesWithVariables($item->value, $variables);
+            $types = $this->normalizeFieldTypes($fieldName, $types);
             $definition->addField($fieldName, $types);
             $definition->addReferences($this->extractClassReferences($types));
         }
@@ -439,5 +441,18 @@ class ToArrayParser extends AbstractParser
         }
 
         return null;
+    }
+
+    /**
+     * @param list<string> $types
+     * @return list<string>
+     */
+    private function normalizeFieldTypes(string $fieldName, array $types): array
+    {
+        if ($types === ['mixed'] && $this->isUuidLikeName($fieldName)) {
+            return ['string'];
+        }
+
+        return $types;
     }
 }

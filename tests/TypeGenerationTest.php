@@ -66,7 +66,7 @@ export interface StreetResource {
 
 export interface TestResource {
   id: number;
-  uuid: any;
+  uuid: string;
   type: string;
   user: UserDto;
   contact: ContactModel;
