@@ -1,3 +1,9 @@
+<p align="center">
+<a href="https://packagist.org/packages/diephp/laravel-resources-typescript"><img src="https://img.shields.io/packagist/dt/diephp/laravel-resources-typescript" alt="Total Downloads"></a>
+<a href="https://packagist.org/packages/diephp/laravel-resources-typescript"><img src="https://img.shields.io/packagist/v/diephp/laravel-resources-typescript" alt="Latest Stable Version"></a>
+<a href="https://packagist.org/packages/diephp/laravel-resources-typescript"><img src="https://img.shields.io/packagist/l/diephp/laravel-resources-typescript" alt="License"></a>
+</p>
+
 # Laravel Resources to TypeScript
 
 Version `2.0` of the package.
