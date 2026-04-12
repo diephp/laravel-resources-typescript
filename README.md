@@ -16,6 +16,12 @@ The package analyzes native Laravel resources and can extract structure from:
 
 If a type cannot be determined safely, it falls back to `any`.
 
+## Project Story
+
+This is a lightweight package for development-time generation of TypeScript interfaces from standard Laravel resources for Laravel `10`, `11`, `12`, `13` and PHP `8.1+`.
+
+It was originally developed to satisfy a requirement to minimize the use of heavy packages in the [Restsify](https://restsify.com) project, and then opened for everyone who prefers to keep server resources fully under control.
+
 ## What's New in 2.0
 
 - Support for PHP `enum` inside resources.
@@ -30,7 +36,7 @@ If a type cannot be determined safely, it falls back to `any`.
 ## Compatibility
 
 - PHP: `^8.1`
-- Laravel: tested with `^9.0` and compatible with newer versions that keep standard resource behavior
+- Laravel: tested with `^9.0` and compatible with newer versions `^13.0` that keep standard resource behavior
 - TypeScript output: supports both generated `interface` and `type`
 
 ## Upgrading from 1.x
@@ -58,7 +64,7 @@ Version `2.0` is mostly source-compatible in usage, but there are a few importan
 ## Installation
 
 ```bash
-composer require diephp/laravel-resources-typescript
+composer require --dev diephp/laravel-resources-typescript
 ```
 
 For `2.0`, your project must run on PHP `8.1+`.
