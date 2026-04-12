@@ -31,6 +31,13 @@ abstract class AbstractParser extends NodeVisitorAbstract
 
     protected ?string $classFqcn = null;
 
+    protected ?string $classExtends = null;
+
+    /**
+     * @var array<string, list<string>>
+     */
+    protected array $classPropertyTypeHints = [];
+
     public function beforeTraverse(array $nodes): ?array
     {
         $this->resetState();
@@ -59,6 +66,14 @@ abstract class AbstractParser extends NodeVisitorAbstract
         if ($node instanceof Stmt\ClassLike && $node->name !== null) {
             $this->className = $node->name->toString();
             $this->classFqcn = $this->resolveClassLikeName($node);
+        }
+
+        if ($node instanceof Stmt\Class_) {
+            $this->classExtends = $node->extends !== null
+                ? $this->resolveName($node->extends)
+                : null;
+
+            $this->hydratePropertyTypeHints($node->getDocComment()?->getText());
         }
 
         return null;
@@ -142,6 +157,10 @@ abstract class AbstractParser extends NodeVisitorAbstract
             return ['array'];
         }
 
+        if ($node instanceof Expr\PropertyFetch) {
+            return $this->inferTypesFromPropertyFetch($node);
+        }
+
         if ($node instanceof Expr\New_) {
             return $this->inferTypesFromInstantiation($node);
         }
@@ -221,29 +240,7 @@ abstract class AbstractParser extends NodeVisitorAbstract
                 continue;
             }
 
-            $arrayDepth = 0;
-
-            while (str_ends_with($part, '[]')) {
-                $arrayDepth++;
-                $part = substr($part, 0, -2);
-            }
-
-            if (preg_match('/^(array|list)<.*>$/i', $part) === 1) {
-                $normalized = 'array';
-            } elseif (preg_match('/^(Collection)<.*>$/', $part) === 1) {
-                $normalized = 'mixed[]';
-            } elseif (str_starts_with($part, 'array{')) {
-                $normalized = 'array';
-            } else {
-                $normalized = $this->normalizeTypeToken($part);
-            }
-
-            while ($arrayDepth > 0) {
-                $normalized .= '[]';
-                $arrayDepth--;
-            }
-
-            $resolved[] = $normalized;
+            $resolved[] = $this->resolveSingleTypeString($part);
         }
 
         return $resolved === [] ? ['mixed'] : array_values(array_unique($resolved));
@@ -380,6 +377,20 @@ abstract class AbstractParser extends NodeVisitorAbstract
         }
 
         return $this->resolveName($type) ?? $type;
+    }
+
+    protected function isJsonResourceClass(): bool
+    {
+        return in_array(
+            $this->shortName($this->classExtends ?? ''),
+            ['JsonResource', 'ResourceCollection'],
+            true,
+        );
+    }
+
+    protected function getPropertyHintTypes(string $propertyName): array
+    {
+        return $this->classPropertyTypeHints[$propertyName] ?? ['mixed'];
     }
 
     protected function resolveName(Name|string|null $name): ?string
@@ -569,12 +580,270 @@ abstract class AbstractParser extends NodeVisitorAbstract
         return $normalized === 'uuid' || str_ends_with($normalized, 'uuid');
     }
 
+    /**
+     * @return list<string>
+     */
+    private function inferTypesFromPropertyFetch(Expr\PropertyFetch $node): array
+    {
+        if (!$node->name instanceof Node\Identifier) {
+            return ['mixed'];
+        }
+
+        $propertyName = $node->name->toString();
+
+        if (isset($this->classPropertyTypeHints[$propertyName])) {
+            return $this->classPropertyTypeHints[$propertyName];
+        }
+
+        if (
+            $node->var instanceof Expr\PropertyFetch
+            && $node->var->name instanceof Node\Identifier
+            && $node->var->name->toString() === 'resource'
+            && isset($this->classPropertyTypeHints[$propertyName])
+        ) {
+            return $this->classPropertyTypeHints[$propertyName];
+        }
+
+        return ['mixed'];
+    }
+
+    private function hydratePropertyTypeHints(?string $docComment): void
+    {
+        $this->classPropertyTypeHints = [];
+
+        if ($docComment === null) {
+            return;
+        }
+
+        if (preg_match_all(
+            '/@property(?:-read|-write)?\s+([^\s]+)\s+\$([\w]+)/i',
+            $docComment,
+            $matches,
+            PREG_SET_ORDER,
+        ) === 0) {
+            return;
+        }
+
+        foreach ($matches as $match) {
+            $this->classPropertyTypeHints[$match[2]] = $this->resolveTypeString($match[1] ?? 'mixed');
+        }
+    }
+
+    private function resolveSingleTypeString(string $type): string
+    {
+        $type = trim($type);
+
+        if ($type === '') {
+            return 'mixed';
+        }
+
+        $arrayDepth = 0;
+
+        while (str_ends_with($type, '[]')) {
+            $arrayDepth++;
+            $type = substr($type, 0, -2);
+        }
+
+        $normalized = match (true) {
+            str_starts_with($type, 'array{') => $this->convertShapeToTypeScript($type, 'array'),
+            str_starts_with($type, 'object{') => $this->convertShapeToTypeScript($type, 'object'),
+            preg_match('/^(array|list|Collection)\s*<(.+)>$/i', $type) === 1 => $this->convertGenericCollectionType($type),
+            strtolower($type) === 'collection' => 'mixed[]',
+            default => $this->normalizeTypeToken($type),
+        };
+
+        while ($arrayDepth > 0) {
+            $normalized .= '[]';
+            $arrayDepth--;
+        }
+
+        return $normalized;
+    }
+
+    private function convertGenericCollectionType(string $type): string
+    {
+        preg_match('/^(\w+)\s*<(.+)>$/i', $type, $matches);
+
+        $genericName = strtolower($matches[1] ?? 'array');
+        $inner = trim($matches[2] ?? '');
+        $parts = $this->splitTopLevel($inner, ',');
+
+        $valueType = $parts === [] ? 'mixed' : trim((string) end($parts));
+
+        if ($genericName === 'array' && count($parts) === 1) {
+            $valueType = trim($parts[0]);
+        }
+
+        if ($genericName === 'list' && count($parts) >= 1) {
+            $valueType = trim($parts[0]);
+        }
+
+        $resolvedValueType = $this->resolveSingleTypeString($valueType);
+
+        return $this->wrapArrayType($resolvedValueType);
+    }
+
+    private function convertShapeToTypeScript(string $type, string $shapeKind): string
+    {
+        $start = strpos($type, '{');
+
+        if ($start === false) {
+            return $shapeKind === 'array' ? 'array' : 'object';
+        }
+
+        $shape = $this->extractDelimitedContent(substr($type, $start), '{', '}');
+        $fields = [];
+
+        foreach ($this->splitTopLevel($shape, ',') as $definition) {
+            $definition = trim($definition);
+
+            if ($definition === '') {
+                continue;
+            }
+
+            [$fieldName, $fieldType] = $this->splitFieldDefinition($definition);
+
+            if ($fieldName === null || $fieldType === null) {
+                continue;
+            }
+
+            $optional = str_ends_with($fieldName, '?');
+            $fieldName = rtrim($fieldName, '?');
+            $fields[] = sprintf(
+                '%s%s: %s',
+                $fieldName,
+                $optional ? '?' : '',
+                $this->renderInlineUnion($this->resolveTypeString($fieldType)),
+            );
+        }
+
+        return '{ ' . implode('; ', $fields) . ' }';
+    }
+
+    /**
+     * @param list<string> $types
+     */
+    private function renderInlineUnion(array $types): string
+    {
+        $rendered = array_values(array_unique(array_map(
+            fn (string $type): string => $this->convertInlineTypeToTypeScript($type),
+            $types,
+        )));
+
+        return implode(' | ', $rendered === [] ? ['any'] : $rendered);
+    }
+
+    private function convertInlineTypeToTypeScript(string $type): string
+    {
+        if (str_starts_with($type, '{ ') || str_starts_with($type, 'Array<')) {
+            return $type;
+        }
+
+        if (str_ends_with($type, '[]')) {
+            return $this->wrapArrayType($this->convertInlineTypeToTypeScript(substr($type, 0, -2)));
+        }
+
+        return match ($type) {
+            'int', 'integer', 'float', 'double' => 'number',
+            'bool', 'boolean' => 'boolean',
+            'mixed' => 'any',
+            default => str_contains($type, '\\') ? $this->shortName($type) : $type,
+        };
+    }
+
+    private function wrapArrayType(string $type): string
+    {
+        return str_contains($type, ' ') || str_contains($type, '|')
+            ? 'Array<' . $type . '>'
+            : $type . '[]';
+    }
+
+    /**
+     * @return array{0: string|null, 1: string|null}
+     */
+    private function splitFieldDefinition(string $definition): array
+    {
+        $buffer = '';
+        $depth = 0;
+        $length = strlen($definition);
+
+        for ($index = 0; $index < $length; $index++) {
+            $character = $definition[$index];
+
+            if (in_array($character, ['<', '{', '(', '['], true)) {
+                $depth++;
+            } elseif (in_array($character, ['>', '}', ')', ']'], true) && $depth > 0) {
+                $depth--;
+            }
+
+            if ($character === ':' && $depth === 0) {
+                return [
+                    trim($buffer),
+                    trim(substr($definition, $index + 1)),
+                ];
+            }
+
+            $buffer .= $character;
+        }
+
+        return [null, null];
+    }
+
+    private function extractDelimitedContent(string $value, string $open, string $close): string
+    {
+        $start = strpos($value, $open);
+
+        if ($start === false) {
+            return $value;
+        }
+
+        $depth = 0;
+        $buffer = '';
+        $length = strlen($value);
+
+        for ($index = $start; $index < $length; $index++) {
+            $character = $value[$index];
+
+            if ($character === $open) {
+                if ($depth > 0) {
+                    $buffer .= $character;
+                }
+
+                $depth++;
+
+                continue;
+            }
+
+            if ($character === $close) {
+                $depth--;
+
+                if ($depth === 0) {
+                    return $buffer;
+                }
+
+                if ($depth > 0) {
+                    $buffer .= $character;
+                }
+
+                continue;
+            }
+
+            if ($depth > 0) {
+                $buffer .= $character;
+            }
+        }
+
+        return $buffer;
+    }
+
     private function resetState(): void
     {
         $this->namespace = '';
         $this->uses = [];
         $this->className = null;
         $this->classFqcn = null;
+        $this->classExtends = null;
+        $this->classPropertyTypeHints = [];
 
         $this->resetDefinitionState();
     }

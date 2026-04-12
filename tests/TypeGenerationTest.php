@@ -32,6 +32,11 @@ export interface AddressResource {
   zip2: any;
 }
 
+export interface AnalyticsShapeResource {
+  series: Array<{ name: string; data: number[] }>;
+  categories: string[];
+}
+
 export interface CategoryResource {
   id: number;
   name: string;
@@ -51,6 +56,12 @@ export interface EnumFieldResource {
 }
 
 export type EnumValueResource = StatusEnum;
+
+export interface ResourcePropertyHintsResource {
+  name: any[];
+  status: StatusEnum;
+  categories: any[];
+}
 
 export interface SiteModel {
   domain: string;

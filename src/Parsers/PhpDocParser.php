@@ -23,7 +23,11 @@ class PhpDocParser extends AbstractParser
             $this->parseReturnArrayShape($node->getDocComment()->getText());
         }
 
-        if ($node instanceof Node\Stmt\Class_ && $node->getDocComment() !== null) {
+        if (
+            $node instanceof Node\Stmt\Class_
+            && $node->getDocComment() !== null
+            && !$this->isJsonResourceClass()
+        ) {
             $this->parsePropertyAnnotations($node->getDocComment()->getText());
         }
 
@@ -42,11 +46,13 @@ class PhpDocParser extends AbstractParser
 
     private function parseReturnArrayShape(string $docComment): void
     {
-        if (!preg_match('/@return\s+array\s*{(.+?)}/s', $docComment, $matches)) {
+        $shape = $this->extractReturnArrayShape($docComment);
+
+        if ($shape === null) {
             return;
         }
 
-        $shape = preg_replace('/^\s*\*\s?/m', '', $matches[1]) ?? $matches[1];
+        $shape = preg_replace('/^\s*\*\s?/m', '', $shape) ?? $shape;
 
         foreach ($this->splitTopLevel($shape, ',') as $definition) {
             $definition = trim($definition);
@@ -64,6 +70,52 @@ class PhpDocParser extends AbstractParser
             $this->definition->addField($fieldName, $types, $optional);
             $this->definition->addReferences($this->extractClassReferences($types));
         }
+    }
+
+    private function extractReturnArrayShape(string $docComment): ?string
+    {
+        if (!preg_match('/@return\s+array\s*{/i', $docComment, $matches, PREG_OFFSET_CAPTURE)) {
+            return null;
+        }
+
+        $start = ($matches[0][1] ?? 0) + strlen($matches[0][0]) - 1;
+        $depth = 0;
+        $buffer = '';
+        $length = strlen($docComment);
+
+        for ($index = $start; $index < $length; $index++) {
+            $character = $docComment[$index];
+
+            if ($character === '{') {
+                if ($depth > 0) {
+                    $buffer .= $character;
+                }
+
+                $depth++;
+
+                continue;
+            }
+
+            if ($character === '}') {
+                $depth--;
+
+                if ($depth === 0) {
+                    return $buffer;
+                }
+
+                if ($depth > 0) {
+                    $buffer .= $character;
+                }
+
+                continue;
+            }
+
+            if ($depth > 0) {
+                $buffer .= $character;
+            }
+        }
+
+        return trim($buffer) !== '' ? $buffer : null;
     }
 
     private function parsePropertyAnnotations(string $docComment): void
