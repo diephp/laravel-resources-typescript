@@ -20,7 +20,7 @@ If a type cannot be determined safely, it falls back to `any`.
 
 This is a lightweight package for development-time generation of TypeScript interfaces from standard Laravel resources for Laravel `10`, `11`, `12`, `13` and PHP `8.1+`.
 
-It was originally developed to satisfy a requirement to minimize the use of heavy packages in the [Restsify](https://restsify.com) project, and then opened for everyone who prefers to keep server resources fully under control.
+It was originally developed to satisfy a requirement to minimize the use of heavy packages in the [Restsify](https://restsify.com/en) project and then opened for everyone who prefers to keep server resources fully under control.
 
 ## What's New in 2.0
 
