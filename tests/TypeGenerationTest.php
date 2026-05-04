@@ -37,6 +37,19 @@ export interface AnalyticsShapeResource {
   categories: string[];
 }
 
+export interface ApiMediaResource {
+  id: number;
+  type: string;
+  thumbnails: { big: string | null; mini: string | null; small: string | null; medium: string | null; p320: string | null; p720: string | null };
+  created_at: string;
+}
+
+export interface ApiMediaViaClassResource {
+  id: number;
+  thumbnails: MediaThumbnails;
+  created_at: string;
+}
+
 export interface CategoryResource {
   id: number;
   name: string;
@@ -58,8 +71,17 @@ export interface EnumFieldResource {
 export type EnumValueResource = StatusEnum;
 
 export interface MalformedPhpDocResource {
-  series: { name: string; data: number[] } | any[];
-  categories: any[];
+  series: { name: string; data: number[] };
+  categories: any;
+}
+
+export interface MediaThumbnails {
+  mini: string | null;
+  small: string | null;
+  medium: string | null;
+  big: string | null;
+  p320: string | null;
+  p720: string | null;
 }
 
 export interface ResourcePropertyHintsResource {

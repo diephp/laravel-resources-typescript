@@ -17,9 +17,9 @@ class MakeResourcesStructure
         private string $resourcesDir,
         private array $parsers = [],
         private array $fallbackParsers = [],
-        private ?EnumTypeResolver $enumTypeResolver = null,
+        private ?ReferencedTypeResolver $referencedTypeResolver = null,
     ) {
-        $this->enumTypeResolver ??= new EnumTypeResolver();
+        $this->referencedTypeResolver ??= new ReferencedTypeResolver();
     }
 
     /**
@@ -42,7 +42,7 @@ class MakeResourcesStructure
 
         ksort($definitions);
 
-        return $this->enumTypeResolver->resolve($definitions);
+        return $this->referencedTypeResolver->resolve($definitions);
     }
 
     /**

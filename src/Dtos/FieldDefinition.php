@@ -51,11 +51,11 @@ final class FieldDefinition
      */
     public static function normalizeTypes(array|string $types): array
     {
-        $values = is_array($types) ? $types : explode('|', $types);
+        $values = is_array($types) ? $types : self::splitTopLevel((string) $types, '|');
         $normalized = [];
 
         foreach ($values as $type) {
-            foreach (explode('|', (string) $type) as $item) {
+            foreach (self::splitTopLevel((string) $type, '|') as $item) {
                 $trimmed = trim($item);
 
                 if ($trimmed === '') {
@@ -90,7 +90,7 @@ final class FieldDefinition
             return ['mixed'];
         }
 
-        if (in_array('array', $specificTypes, true) && self::hasSpecificArrayType($specificTypes)) {
+        if (in_array('array', $specificTypes, true) && self::hasMoreSpecificTypeThanArray($specificTypes)) {
             $specificTypes = array_values(array_filter(
                 $specificTypes,
                 static fn (string $type): bool => $type !== 'array',
@@ -110,12 +110,13 @@ final class FieldDefinition
     /**
      * @param list<string> $types
      */
-    private static function hasSpecificArrayType(array $types): bool
+    private static function hasMoreSpecificTypeThanArray(array $types): bool
     {
         foreach ($types as $type) {
             if (
                 $type !== 'array'
-                && (str_ends_with($type, '[]') || str_starts_with($type, 'Array<'))
+                && $type !== 'mixed'
+                && $type !== 'null'
             ) {
                 return true;
             }
@@ -136,5 +137,70 @@ final class FieldDefinition
         }
 
         return false;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function splitTopLevel(string $value, string $delimiter): array
+    {
+        $parts = [];
+        $buffer = '';
+        $depth = 0;
+        $inSingleQuote = false;
+        $escaped = false;
+        $length = strlen($value);
+
+        for ($index = 0; $index < $length; $index++) {
+            $character = $value[$index];
+
+            if ($inSingleQuote) {
+                $buffer .= $character;
+
+                if ($escaped) {
+                    $escaped = false;
+
+                    continue;
+                }
+
+                if ($character === '\\') {
+                    $escaped = true;
+
+                    continue;
+                }
+
+                if ($character === "'") {
+                    $inSingleQuote = false;
+                }
+
+                continue;
+            }
+
+            if ($character === "'") {
+                $inSingleQuote = true;
+                $buffer .= $character;
+
+                continue;
+            }
+
+            if (in_array($character, ['<', '{', '(', '['], true)) {
+                $depth++;
+            } elseif (in_array($character, ['>', '}', ')', ']'], true) && $depth > 0) {
+                $depth--;
+            }
+
+            if ($character === $delimiter && $depth === 0) {
+                $parts[] = $buffer;
+                $buffer = '';
+
+                continue;
+            }
+
+            $buffer .= $character;
+        }
+
+        $parts[] = $buffer;
+
+        return $parts;
     }
 }
