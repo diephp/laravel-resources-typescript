@@ -6,7 +6,7 @@
 
 # Laravel Resources to TypeScript
 
-Version `2.0` of the package.
+Version `2.0.2` of the package.
 
 Generate TypeScript `interface` and `type` definitions from standard Laravel resources without rewriting your API layer into DTO-only abstractions.
 
@@ -24,9 +24,21 @@ If a type cannot be determined safely, it falls back to `any`.
 
 ## Project Story
 
-This is a lightweight package for development-time generation of TypeScript interfaces from standard Laravel resources for Laravel `10`, `11`, `12`, `13` and PHP `8.1+`.
+This is a lightweight package for development-time generation of TypeScript interfaces from standard Laravel resources for Laravel `9`, `10`, `11`, `12`, `13` and PHP `8.1+`.
 
 It was originally developed to satisfy a requirement to minimize the use of heavy packages in the [Restsify](https://restsify.com/en) project and then opened for everyone who prefers to keep server resources fully under control.
+
+## What's New in 2.0.2
+
+Maintenance release, no API changes and no change to supported Laravel or PHP versions:
+
+- Development constraint for `laravel/framework` widened from `^9.0` to `^9.0 || ^10.0 || ^11.0 || ^12.0 || ^13.0`,
+  so the test suite can run on any supported framework version instead of an unreleased `9.x` branch.
+- `minimum-stability` switched from `dev` to `stable`, so a plain `composer update` no longer pulls
+  development branches.
+- `jetbrains/phpstorm-attributes` pinned to a stable `^1.0` instead of `dev-master`.
+- `phpunit/phpunit` widened to `^10.5 || ^11.5 || ^12.0`.
+- Added a GitHub Actions test matrix (PHP `8.2`–`8.4`) and a Dependabot configuration for dev dependencies.
 
 ## What's New in 2.0
 
@@ -42,8 +54,31 @@ It was originally developed to satisfy a requirement to minimize the use of heav
 ## Compatibility
 
 - PHP: `^8.1`
-- Laravel: tested with `^9.0` and compatible with newer versions `^13.0` that keep standard resource behavior
+- Laravel: `9`, `10`, `11`, `12`, `13` — any version that keeps standard resource behaviour
 - TypeScript output: supports both generated `interface` and `type`
+
+Laravel is **not** a dependency of this package. The framework is only needed for the artisan command
+and the service provider, so it is listed in `require-dev` (for this repository's own test suite) and
+in `suggest`. Neither of those affects your project: Composer ignores a library's `require-dev`, so the
+package installs next to any Laravel version and never forces an upgrade.
+
+The only production dependency is `nikic/php-parser`.
+
+## Security and dependencies
+
+The package has no runtime dependency on `laravel/framework`, so no framework advisory can reach a
+consumer project through it. Advisories that automated scanners report against this repository refer to
+the framework version used by the package's own test suite, not to anything shipped to users.
+
+To keep that noise down without narrowing Laravel support:
+
+- `require-dev` spans `^9.0` through `^13.0`, so a patched version is always inside the declared range
+  and the repository never pins an end-of-life branch.
+- `minimum-stability` is `stable`, so `composer update` resolves to real releases instead of a
+  `dev-master` branch that the advisory database cannot match.
+- `composer.lock` is not committed — this is a library, not an application — so no stale locked version
+  can be flagged.
+- CI runs `composer audit --no-dev`, which audits exactly what consumers actually receive.
 
 ## Upgrading from 1.x
 
@@ -331,6 +366,12 @@ If you are publishing or searching for the package, the main focus of `2.0` is:
 
 ```bash
 composer test
+```
+
+Check dependencies against the security advisory database:
+
+```bash
+composer audit
 ```
 
 ## License
