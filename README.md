@@ -224,6 +224,15 @@ export interface ExampleResource {
 }
 ```
 
+PHPDoc also supports typed dictionaries (`array<string, T>` → `Record<string, T>`),
+lists (`list<T>`), tuples (`array{string, int}` → `[string, number]`), nullable values,
+and optional shape keys such as `label?: string`. A generic return annotation such
+as `@return array<string, T>` generates a type alias. Autoloadable resource
+subclasses can inherit the PHPDoc of their parent's `toArray()`.
+
+To use a documented return type whenever one is available, put `PhpDocParser::class`
+in `parsers` and move the inference parsers to `fallback_parsers`.
+
 ### 4. DTO or model-like class with typed public properties
 
 ```php

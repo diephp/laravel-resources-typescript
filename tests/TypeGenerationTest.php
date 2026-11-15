@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace DiePHP\Tests;
 
+use DiePHP\LaravelResourcesTypescript\Parsers\PhpDocParser;
 use DiePHP\LaravelResourcesTypescript\Services\MakeResourcesStructure;
+use DiePHP\LaravelResourcesTypescript\Services\ReferencedTypeResolver;
 use DiePHP\LaravelResourcesTypescript\Services\TypeScriptInterfaceGenerator;
+use DiePHP\Tests\Support\InheritedAnalyticsResource;
 use PHPUnit\Framework\TestCase;
 
 class TypeGenerationTest extends TestCase
@@ -129,5 +132,78 @@ export interface UserDto {
 TS;
 
         self::assertSame($expected . PHP_EOL, $generatedTypes);
+    }
+
+    public function test_phpdoc_generates_dictionaries_tuples_and_nested_enum_references(): void
+    {
+        $parser = new PhpDocParser();
+        $definition = $parser->process(<<<'PHP'
+            <?php
+
+            namespace Example;
+
+            use DiePHP\Tests\Examples\StatusEnum as Status;
+
+            class ReportResource
+            {
+                /**
+                 * @return array{
+                 *     translations: array<string, string|null>,
+                 *     changes: array<array-key, mixed>,
+                 *     schedule?: list<array{string, int|null}>,
+                 *     statuses: array<string, list<Status|null>>,
+                 *     empty: array{},
+                 * }
+                 */
+                public function toArray(): array {}
+            }
+            PHP);
+
+        $definitions = (new ReferencedTypeResolver())->resolve(['ReportResource' => $definition]);
+        $generator = new TypeScriptInterfaceGenerator();
+
+        self::assertSame(<<<'TS'
+            export interface ReportResource {
+              translations: Record<string, string | null>;
+              changes: Record<string, unknown> | Array<unknown>;
+              schedule?: Array<[string, number | null]>;
+              statuses: Record<string, Array<StatusEnum | null>>;
+              empty: [];
+            }
+
+            export type StatusEnum = 'draft' | 'published' | 'archived';
+            TS, rtrim($generator->generate($definitions)));
+    }
+
+    public function test_phpdoc_generates_a_type_alias_for_a_generic_return_array(): void
+    {
+        $definition = (new PhpDocParser())->process(<<<'PHP'
+            <?php
+
+            class ChangesResource
+            {
+                /**
+                 * @return array<
+                 *     array-key,
+                 *     list<string|null>
+                 * > The JSON changes.
+                 */
+                public function toArray(): array {}
+            }
+            PHP);
+
+        self::assertSame(
+            'export type ChangesResource = Record<string, Array<string | null>> | Array<Array<string | null>>;',
+            rtrim((new TypeScriptInterfaceGenerator())->generate(['ChangesResource' => $definition])),
+        );
+    }
+
+    public function test_phpdoc_inherits_the_parent_serializer_shape(): void
+    {
+        $resource = new \ReflectionClass(InheritedAnalyticsResource::class);
+        $definition = (new PhpDocParser())->process(file_get_contents($resource->getFileName()));
+
+        self::assertSame('InheritedAnalyticsResource', $definition->getName());
+        self::assertSame(['series', 'categories'], array_keys($definition->getFields()));
     }
 }

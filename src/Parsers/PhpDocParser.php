@@ -5,11 +5,18 @@ declare(strict_types=1);
 namespace DiePHP\LaravelResourcesTypescript\Parsers;
 
 use DiePHP\LaravelResourcesTypescript\Dtos\TypeDefinition;
+use Illuminate\Http\Resources\Json\JsonResource;
 use PhpParser\Node;
+use ReflectionMethod;
 
 class PhpDocParser extends AbstractParser
 {
     private TypeDefinition $definition;
+
+    private bool $hasSerializer = false;
+
+    /** @var list<string>|null */
+    private ?array $typeReferences = null;
 
     public function enterNode(Node $node): null|int|Node|array
     {
@@ -18,9 +25,12 @@ class PhpDocParser extends AbstractParser
         if (
             $node instanceof Node\Stmt\ClassMethod
             && $node->name->toString() === 'toArray'
-            && $node->getDocComment() !== null
         ) {
-            $this->parseReturnArrayShape($node->getDocComment()->getText());
+            $this->hasSerializer = true;
+
+            if (($doc = $node->getDocComment()) !== null) {
+                $this->parseReturnType($doc->getText());
+            }
         }
 
         if (
@@ -37,22 +47,51 @@ class PhpDocParser extends AbstractParser
     protected function resetDefinitionState(): void
     {
         $this->definition = TypeDefinition::interface('AnonymousType');
+        $this->hasSerializer = false;
+        $this->typeReferences = null;
     }
 
     protected function getDefinition(string $name): TypeDefinition
     {
-        return TypeDefinition::interface($name)->merge($this->definition);
+        $definition = TypeDefinition::interface($name)->merge($this->definition);
+
+        if (!$definition->isEmpty() || $this->hasSerializer || $this->classFqcn === null
+            || !is_subclass_of($this->classFqcn, JsonResource::class)) {
+            return $definition;
+        }
+
+        $method = new ReflectionMethod($this->classFqcn, 'toArray');
+        $declaringClass = $method->getDeclaringClass()->getName();
+        $file = $method->getFileName();
+
+        if ($declaringClass === $this->classFqcn || str_starts_with($declaringClass, 'Illuminate\\Http\\Resources\\')
+            || $method->getDocComment() === false || $file === false) {
+            return $definition;
+        }
+
+        $source = file_get_contents($file);
+
+        return $source === false ? $definition : (new self())->process($source, $name);
     }
 
-    private function parseReturnArrayShape(string $docComment): void
+    private function parseReturnType(string $docComment): void
     {
+        $docComment = preg_replace('/^\h*\*\h?/m', '', $docComment) ?? $docComment;
         $shape = $this->extractReturnArrayShape($docComment);
 
         if ($shape === null) {
+            if (preg_match('/@return\s+((?:array|list)\s*(?<generic><(?:[^<>]+|(?&generic))*>))/i', $docComment, $matches)) {
+                $this->definition->setAliasTypes($this->resolveDocumentedTypes($matches[1]));
+            }
+
             return;
         }
 
-        $shape = preg_replace('/^\s*\*\s?/m', '', $shape) ?? $shape;
+        if (count($this->splitTopLevel($shape, ':')) === 1) {
+            $this->definition->setAliasTypes($this->resolveDocumentedTypes('array{' . $shape . '}'));
+
+            return;
+        }
 
         foreach ($this->splitTopLevel($shape, ',') as $definition) {
             $definition = trim($definition);
@@ -65,10 +104,7 @@ class PhpDocParser extends AbstractParser
             $field = ltrim($field, "* \t\n\r\0\x0B");
             $optional = str_ends_with($field, '?');
             $fieldName = rtrim($field, '?');
-            $types = $this->resolveTypeString($type);
-
-            $this->definition->addField($fieldName, $types, $optional);
-            $this->definition->addReferences($this->extractClassReferences($types));
+            $this->definition->addField($fieldName, $this->resolveDocumentedTypes($type), $optional);
         }
     }
 
@@ -130,10 +166,29 @@ class PhpDocParser extends AbstractParser
         }
 
         foreach ($matches as $match) {
-            $types = $this->resolveTypeString($match[1] ?? 'mixed');
-
-            $this->definition->addField($match[2], $types);
-            $this->definition->addReferences($this->extractClassReferences($types));
+            $this->definition->addField($match[2], $this->resolveDocumentedTypes($match[1]));
         }
+    }
+
+    protected function normalizeTypeToken(string $type): string
+    {
+        $type = parent::normalizeTypeToken($type);
+
+        if ($this->typeReferences !== null) {
+            $this->typeReferences = [...$this->typeReferences, ...$this->extractClassReferences([$type])];
+        }
+
+        return $type;
+    }
+
+    /** @return list<string> */
+    private function resolveDocumentedTypes(string $type): array
+    {
+        $this->typeReferences = [];
+        $types = $this->resolveTypeString($type);
+        $this->definition->addReferences($this->typeReferences);
+        $this->typeReferences = null;
+
+        return $types;
     }
 }

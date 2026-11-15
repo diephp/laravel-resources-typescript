@@ -385,7 +385,8 @@ abstract class AbstractParser extends NodeVisitorAbstract
             $this->shortName($this->classExtends ?? ''),
             ['JsonResource', 'ResourceCollection'],
             true,
-        );
+        ) || ($this->classFqcn !== null
+            && is_subclass_of($this->classFqcn, \Illuminate\Http\Resources\Json\JsonResource::class));
     }
 
     protected function getPropertyHintTypes(string $propertyName): array
@@ -647,40 +648,30 @@ abstract class AbstractParser extends NodeVisitorAbstract
         $normalized = match (true) {
             str_starts_with($type, 'array{') => $this->convertShapeToTypeScript($type, 'array'),
             str_starts_with($type, 'object{') => $this->convertShapeToTypeScript($type, 'object'),
-            preg_match('/^(array|list|Collection)\s*<(.+)>$/i', $type) === 1 => $this->convertGenericCollectionType($type),
+            preg_match('/^(array|list|Collection)\s*<(.+)>$/is', $type, $generic) === 1 => $this->convertGenericCollectionType($generic[2]),
             strtolower($type) === 'collection' => 'mixed[]',
             default => $this->normalizeTypeToken($type),
         };
 
         while ($arrayDepth > 0) {
-            $normalized .= '[]';
+            $normalized = $this->wrapArrayType($normalized);
             $arrayDepth--;
         }
 
         return $normalized;
     }
 
-    private function convertGenericCollectionType(string $type): string
+    private function convertGenericCollectionType(string $arguments): string
     {
-        preg_match('/^(\w+)\s*<(.+)>$/i', $type, $matches);
+        $parts = $this->splitTopLevel($arguments, ',');
+        $types = $this->resolveTypeString((string) array_pop($parts));
+        $value = $this->renderInlineUnion($types, useUnknownForMixed: true);
 
-        $genericName = strtolower($matches[1] ?? 'array');
-        $inner = trim($matches[2] ?? '');
-        $parts = $this->splitTopLevel($inner, ',');
-
-        $valueType = $parts === [] ? 'mixed' : trim((string) end($parts));
-
-        if ($genericName === 'array' && count($parts) === 1) {
-            $valueType = trim($parts[0]);
-        }
-
-        if ($genericName === 'list' && count($parts) >= 1) {
-            $valueType = trim($parts[0]);
-        }
-
-        $resolvedValueType = $this->resolveSingleTypeString($valueType);
-
-        return $this->wrapArrayType($resolvedValueType);
+        return match (strtolower(trim($parts[0] ?? ''))) {
+            'string' => 'Record<string, ' . $value . '>',
+            'array-key' => 'Record<string, ' . $value . '> | Array<' . $value . '>',
+            default => $this->wrapArrayType(count($types) === 1 && $types[0] !== 'mixed' ? $types[0] : $value),
+        };
     }
 
     private function convertShapeToTypeScript(string $type, string $shapeKind): string
@@ -692,9 +683,20 @@ abstract class AbstractParser extends NodeVisitorAbstract
         }
 
         $shape = $this->extractDelimitedContent(substr($type, $start), '{', '}');
+        $definitions = $this->splitTopLevel($shape, ',');
+
+        if ($shapeKind === 'array' && count($this->splitTopLevel($shape, ':')) === 1) {
+            $elements = array_filter(array_map('trim', $definitions), 'strlen');
+
+            return '[' . implode(', ', array_map(
+                fn (string $element): string => $this->renderInlineUnion($this->resolveTypeString($element), useUnknownForMixed: true),
+                $elements,
+            )) . ']';
+        }
+
         $fields = [];
 
-        foreach ($this->splitTopLevel($shape, ',') as $definition) {
+        foreach ($definitions as $definition) {
             $definition = trim($definition);
 
             if ($definition === '') {
@@ -723,10 +725,12 @@ abstract class AbstractParser extends NodeVisitorAbstract
     /**
      * @param list<string> $types
      */
-    private function renderInlineUnion(array $types): string
+    private function renderInlineUnion(array $types, bool $useUnknownForMixed = false): string
     {
         $rendered = array_values(array_unique(array_map(
-            fn (string $type): string => $this->convertInlineTypeToTypeScript($type),
+            fn (string $type): string => $useUnknownForMixed && $type === 'mixed'
+                ? 'unknown'
+                : $this->convertInlineTypeToTypeScript($type),
             $types,
         )));
 
@@ -753,7 +757,7 @@ abstract class AbstractParser extends NodeVisitorAbstract
 
     private function wrapArrayType(string $type): string
     {
-        return str_contains($type, ' ') || str_contains($type, '|')
+        return strpbrk($type, ' |<') !== false || str_starts_with($type, '[')
             ? 'Array<' . $type . '>'
             : $type . '[]';
     }
